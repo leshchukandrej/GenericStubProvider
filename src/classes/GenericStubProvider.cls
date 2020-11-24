@@ -17,50 +17,52 @@ public with sharing class GenericStubProvider implements StubProvider{
     private static final String VALUE_SEPARATOR = String.valueOf(Datetime.now().getTime());
 
     private static final Set<Type> ALL_STUBS = new Set<Type>{
-            InputTypesAndInputValuesStub.class,
-            ReturnTypeAndInputTypesStub.class,
-            ReturnTypeAndInputValuesStub.class,
-            MethodNameAndInputValuesStub.class,
-            MethodNameAndInputTypesStub.class,
-            MethodNameAndReturnTypeStub.class,
-            InputValuesStub.class,
-            InputTypesStub.class,
-            ReturnTypeStub.class,
-            MethodNameStub.class
+        InputTypesAndInputValuesStub.class,
+        ReturnTypeAndInputTypesStub.class,
+        ReturnTypeAndInputValuesStub.class,
+        MethodNameAndInputValuesStub.class,
+        MethodNameAndInputTypesStub.class,
+        MethodNameAndReturnTypeStub.class,
+        InputValuesStub.class,
+        InputTypesStub.class,
+        ReturnTypeStub.class,
+        MethodNameStub.class
     };
 
     private static final Set<Type> STUBS_BY_METHOD_NAME = new Set<Type>{
-            MethodNameAndInputValuesStub.class,
-            MethodNameAndInputTypesStub.class,
-            MethodNameAndReturnTypeStub.class,
-            MethodNameStub.class
+        MethodNameAndInputValuesStub.class,
+        MethodNameAndInputTypesStub.class,
+        MethodNameAndReturnTypeStub.class,
+        MethodNameStub.class
     };
 
     private static final Set<Type> STUBS_BY_RETURN_TYPE = new Set<Type>{
-            ReturnTypeAndInputTypesStub.class,
-            ReturnTypeAndInputValuesStub.class,
-            MethodNameAndReturnTypeStub.class,
-            ReturnTypeStub.class
+        ReturnTypeAndInputTypesStub.class,
+        ReturnTypeAndInputValuesStub.class,
+        MethodNameAndReturnTypeStub.class,
+        ReturnTypeStub.class
     };
 
     private static final Set<Type> STUBS_BY_INPUT_TYPES = new Set<Type>{
-            InputTypesAndInputValuesStub.class,
-            ReturnTypeAndInputTypesStub.class,
-            MethodNameAndInputTypesStub.class,
-            InputTypesStub.class
+        InputTypesAndInputValuesStub.class,
+        ReturnTypeAndInputTypesStub.class,
+        MethodNameAndInputTypesStub.class,
+        InputTypesStub.class
     };
 
     private static final Set<Type> STUBS_BY_INPUT_VALUES = new Set<Type>{
-            InputTypesAndInputValuesStub.class,
-            ReturnTypeAndInputValuesStub.class,
-            MethodNameAndInputValuesStub.class,
-            InputValuesStub.class
+        InputTypesAndInputValuesStub.class,
+        ReturnTypeAndInputValuesStub.class,
+        MethodNameAndInputValuesStub.class,
+        InputValuesStub.class
     };
 
 
-
     Boolean isLogsEnabled = false;
-    Set<GenericStubProvider.AbstractStub> stubs = new Set<GenericStubProvider.AbstractStub>();
+
+    GenericStubProvider.StubBuilder stubBuilder = new GenericStubProvider.StubBuilder();
+
+    Set<AbstractStub> stubs = new Set<AbstractStub>();
     Map<String, Object> returnValueByKey = new Map<String, Object>();
     Map<String, Integer> numberOfCallsByKey = new Map<String, Integer>();
 
@@ -75,26 +77,26 @@ public with sharing class GenericStubProvider implements StubProvider{
         return this;
     }
 
-    public GenericStubProvider.StubBuilder when() {
-        return new GenericStubProvider.StubBuilder(this);
+    public StubReturnValue when(StubCondition stubCondition) {
+        return new StubReturnValue(this, stubCondition);
     }
 
     //    Returns -1 if method was not stubbed
-    public Integer getNumberOfCalls(GenericStubProvider.StubBuilder stubBuilder) {
-        for (GenericStubProvider.AbstractStub stub: this.stubs) {
-            String key = stub.generateKey(stubBuilder);
+    public Integer getNumberOfCalls(StubCondition stubCondition) {
+        for (AbstractStub stub: this.stubs) {
+            String key = stub.generateKey(stubCondition);
             if (this.returnValueByKey.containsKey(key)) return this.getNumberOfCalls(key);
         }
         return -1;
     }
 
     public Object handleMethodCall(
-            Object stubbedObject,       //doesn't used
-            String stubbedMethodName,
-            System.Type returnType,
-            List<System.Type> paramTypes,
-            List<String> paramNames,
-            List<Object> args
+        Object stubbedObject,       //doesn't used
+        String stubbedMethodName,
+        System.Type returnType,
+        List<System.Type> paramTypes,
+        List<String> paramNames,
+        List<Object> args
     ) {
 
         if (this.isLogsEnabled) {
@@ -107,17 +109,17 @@ public with sharing class GenericStubProvider implements StubProvider{
         }
 
         return this.getReturnValue(
-                new GenericStubProvider.StubBuilder(this)
-                        .setMethod(stubbedMethodName)
-                        .setReturnType(returnType)
-                        .setInputTypes(paramTypes)
-                        .setInputValues(args)
+            new StubCondition()
+                .setMethod(stubbedMethodName)
+                .setReturnType(returnType)
+                .setInputTypes(paramTypes)
+                .setInputValues(args)
         );
     }
 
-    private Object getReturnValue(GenericStubProvider.StubBuilder stubBuilder) {
-        for (GenericStubProvider.AbstractStub stub: this.stubs) {
-            String key = stub.generateKey(stubBuilder);
+    private Object getReturnValue(StubCondition stubCondition) {
+        for (AbstractStub stub: this.stubs) {
+            String key = stub.generateKey(stubCondition);
             if (this.returnValueByKey.containsKey(key)) return this.returnValueAndLogCall(key);
         }
         return null;
@@ -141,38 +143,43 @@ public with sharing class GenericStubProvider implements StubProvider{
         }
     }
 
-    private GenericStubProvider addStub(GenericStubProvider.AbstractStub stub, String key, Object returnValue) {
+    private GenericStubProvider addStub(StubCondition stubCondition, Object returnValue) {
+        AbstractStub stub = this.stubBuilder.buildStub(stubCondition);
+        this.stubs.add(stub);
+
+        String key = stub.generateKey(stubCondition);
+
         if (this.isLogsEnabled) System.debug( 'Stubbed method key: ' + key );
 
-        this.stubs.add(stub);
         this.returnValueByKey.put(key, returnValue);
+
         return this;
     }
 
 
 
-    private static String getMethodName(GenericStubProvider.StubBuilder stubBuilder) {
-        if (String.isEmpty(stubBuilder.methodName)) throw new GenericStubProviderException(METHOD_NAME_EMPTY_MESSAGE);
-        return stubBuilder.methodName;
+    private static String getMethodName(StubCondition stubCondition) {
+        if (String.isEmpty(stubCondition.methodName)) throw new GenericStubProviderException(METHOD_NAME_EMPTY_MESSAGE);
+        return stubCondition.methodName;
     }
 
-    private static String getReturnTypeString(GenericStubProvider.StubBuilder stubBuilder) {
-        if (stubBuilder.returnType == null) throw new GenericStubProviderException(RETURN_TYPE_EMPTY_MESSAGE);
-        return String.valueOf(stubBuilder.returnType);
+    private static String getReturnTypeString(StubCondition stubCondition) {
+        if (stubCondition.returnType == null) throw new GenericStubProviderException(RETURN_TYPE_EMPTY_MESSAGE);
+        return String.valueOf(stubCondition.returnType);
     }
 
-    private static String getInputTypesString(GenericStubProvider.StubBuilder stubBuilder) {
-        if (stubBuilder.inputTypes == null) throw new GenericStubProviderException(INPUT_TYPES_EMPTY_MESSAGE);
-        return String.valueOf(stubBuilder.inputTypes);
+    private static String getInputTypesString(StubCondition stubCondition) {
+        if (stubCondition.inputTypes == null) throw new GenericStubProviderException(INPUT_TYPES_EMPTY_MESSAGE);
+        return String.valueOf(stubCondition.inputTypes);
     }
 
-    private static String getInputValuesString(GenericStubProvider.StubBuilder stubBuilder) {
-        if (stubBuilder.inputValues == null) throw new GenericStubProviderException(INPUT_VALUES_EMPTY_MESSAGE);
+    private static String getInputValuesString(StubCondition stubCondition) {
+        if (stubCondition.inputValues == null) throw new GenericStubProviderException(INPUT_VALUES_EMPTY_MESSAGE);
 
         //VALUE_SEPARATOR is used to avoid wrong scenarios with empty values or without input values
         String key = VALUE_SEPARATOR;
 
-        for (Object inputValue: stubBuilder.inputValues) {
+        for (Object inputValue: stubCondition.inputValues) {
             key += String.valueOf(inputValue) + VALUE_SEPARATOR;
         }
 
@@ -181,68 +188,69 @@ public with sharing class GenericStubProvider implements StubProvider{
 
 
 
-    private class InputTypesAndInputValuesStub extends GenericStubProvider.AbstractStub {
-        protected override String generateKey(GenericStubProvider.StubBuilder stubBuilder) {
-            return getInputTypesString(stubBuilder) + KEY_SEPARATOR + getInputValuesString(stubBuilder);
+    private class InputTypesAndInputValuesStub extends AbstractStub {
+        protected override String generateKey(StubCondition stubCondition) {
+            return getInputTypesString(stubCondition) + KEY_SEPARATOR + getInputValuesString(stubCondition);
         }
     }
 
-    private class ReturnTypeAndInputTypesStub extends GenericStubProvider.AbstractStub {
-        protected override String generateKey(GenericStubProvider.StubBuilder stubBuilder) {
-            return getReturnTypeString(stubBuilder) + KEY_SEPARATOR + getInputTypesString(stubBuilder);
+    private class ReturnTypeAndInputTypesStub extends AbstractStub {
+        protected override String generateKey(StubCondition stubCondition) {
+            return getReturnTypeString(stubCondition) + KEY_SEPARATOR + getInputTypesString(stubCondition);
         }
     }
 
-    private class ReturnTypeAndInputValuesStub extends GenericStubProvider.AbstractStub {
-        protected override String generateKey(GenericStubProvider.StubBuilder stubBuilder) {
-            return getReturnTypeString(stubBuilder) + KEY_SEPARATOR + getInputValuesString(stubBuilder);
+    private class ReturnTypeAndInputValuesStub extends AbstractStub {
+        protected override String generateKey(StubCondition stubCondition) {
+            return getReturnTypeString(stubCondition) + KEY_SEPARATOR + getInputValuesString(stubCondition);
         }
     }
 
-    private class MethodNameAndInputValuesStub extends GenericStubProvider.AbstractStub {
-        protected override String generateKey(GenericStubProvider.StubBuilder stubBuilder) {
-            return getMethodName(stubBuilder) + KEY_SEPARATOR + getInputValuesString(stubBuilder);
+    private class MethodNameAndInputValuesStub extends AbstractStub {
+        protected override String generateKey(StubCondition stubCondition) {
+            return getMethodName(stubCondition) + KEY_SEPARATOR + getInputValuesString(stubCondition);
         }
     }
 
-    private class MethodNameAndInputTypesStub extends GenericStubProvider.AbstractStub {
-        protected override String generateKey(GenericStubProvider.StubBuilder stubBuilder) {
-            return getMethodName(stubBuilder) + KEY_SEPARATOR + getInputTypesString(stubBuilder);
+    private class MethodNameAndInputTypesStub extends AbstractStub {
+        protected override String generateKey(StubCondition stubCondition) {
+            return getMethodName(stubCondition) + KEY_SEPARATOR + getInputTypesString(stubCondition);
         }
     }
 
-    private class MethodNameAndReturnTypeStub extends GenericStubProvider.AbstractStub {
-        protected override String generateKey(GenericStubProvider.StubBuilder stubBuilder) {
-            return getMethodName(stubBuilder) + KEY_SEPARATOR + getReturnTypeString(stubBuilder);
+    private class MethodNameAndReturnTypeStub extends AbstractStub {
+        protected override String generateKey(StubCondition stubCondition) {
+            return getMethodName(stubCondition) + KEY_SEPARATOR + getReturnTypeString(stubCondition);
         }
     }
 
-    private class InputValuesStub extends GenericStubProvider.AbstractStub {
-        protected override String generateKey(GenericStubProvider.StubBuilder stubBuilder) {
-            return getInputValuesString(stubBuilder);
+    private class InputValuesStub extends AbstractStub {
+        protected override String generateKey(StubCondition stubCondition) {
+            return getInputValuesString(stubCondition);
         }
     }
 
-    private class InputTypesStub extends GenericStubProvider.AbstractStub {
-        protected override String generateKey(GenericStubProvider.StubBuilder stubBuilder) {
-            return getInputTypesString(stubBuilder);
+    private class InputTypesStub extends AbstractStub {
+        protected override String generateKey(StubCondition stubCondition) {
+            return getInputTypesString(stubCondition);
         }
     }
 
-    private class ReturnTypeStub extends GenericStubProvider.AbstractStub {
-        protected override String generateKey(GenericStubProvider.StubBuilder stubBuilder) {
-            return getReturnTypeString(stubBuilder);
+    private class ReturnTypeStub extends AbstractStub {
+        protected override String generateKey(StubCondition stubCondition) {
+            return getReturnTypeString(stubCondition);
         }
     }
 
-    private class MethodNameStub extends GenericStubProvider.AbstractStub {
-        protected override String generateKey(GenericStubProvider.StubBuilder stubBuilder) {
-            return getMethodName(stubBuilder);
+    private class MethodNameStub extends AbstractStub {
+        protected override String generateKey(StubCondition stubCondition) {
+            return getMethodName(stubCondition);
         }
     }
 
-    private abstract class AbstractStub {
-        protected abstract String generateKey(GenericStubProvider.StubBuilder stubBuilder);
+    public abstract class AbstractStub {
+
+        protected abstract String generateKey(StubCondition stubCondition);
 
         public Boolean equals(Object obj) {
             return obj.hashCode() == this.hashCode();
@@ -251,55 +259,18 @@ public with sharing class GenericStubProvider implements StubProvider{
         public Integer hashCode() {
             return this.toString().hashCode();
         }
+
     }
 
 
 
-    public class StubBuilder {
-
-        private GenericStubProvider genericStubProvider;
-
-        private String methodName;
-        private System.Type returnType;
-        private List<System.Type> inputTypes;
-        private List<Object> inputValues;
-
-        private StubBuilder(GenericStubProvider genericStubProvider) {
-            this.genericStubProvider = genericStubProvider;
-        }
-
-        public StubBuilder setMethod(String methodName) {
-            this.methodName = methodName;
-            return this;
-        }
-
-        public StubBuilder setReturnType(System.Type returnType) {
-            this.returnType = returnType;
-            return this;
-        }
-
-        public StubBuilder setInputTypes(List<System.Type> inputTypes) {
-            this.inputTypes = inputTypes;
-            return this;
-        }
-
-        public StubBuilder setInputValues(List<Object> inputValues) {
-            this.inputValues = inputValues;
-            return this;
-        }
-
-        public GenericStubProvider thenReturn(Object returnValue) {
-            GenericStubProvider.AbstractStub stub = this.buildStub();
-            String key = stub.generateKey(this);
-            return this.genericStubProvider.addStub(stub, key, returnValue);
-        }
-
-        private GenericStubProvider.AbstractStub buildStub() {
+    private class StubBuilder {
+        private AbstractStub buildStub(StubCondition stubCondition) {
             Set<Type> stubProviders = new Set<Type>(ALL_STUBS);
-            this.filterStubProviders(stubProviders, this.methodName, STUBS_BY_METHOD_NAME);
-            this.filterStubProviders(stubProviders, this.returnType, STUBS_BY_RETURN_TYPE);
-            this.filterStubProviders(stubProviders, this.inputTypes, STUBS_BY_INPUT_TYPES);
-            this.filterStubProviders(stubProviders, this.inputValues, STUBS_BY_INPUT_VALUES);
+            this.filterStubProviders(stubProviders, stubCondition.methodName, STUBS_BY_METHOD_NAME);
+            this.filterStubProviders(stubProviders, stubCondition.returnType, STUBS_BY_RETURN_TYPE);
+            this.filterStubProviders(stubProviders, stubCondition.inputTypes, STUBS_BY_INPUT_TYPES);
+            this.filterStubProviders(stubProviders, stubCondition.inputValues, STUBS_BY_INPUT_VALUES);
 
             List<Type> stubProvidersList = new List<Type>(stubProviders);
 
@@ -311,7 +282,7 @@ public with sharing class GenericStubProvider implements StubProvider{
                 throw new GenericStubProviderException(STUB_BUILDER_NOT_SELECTIVE_MESSAGE);
             }
 
-            return (GenericStubProvider.AbstractStub) stubProvidersList.get(0).newInstance();
+            return (AbstractStub) stubProvidersList.get(0).newInstance();
         }
 
         private void filterStubProviders(Set<Type> stubProvidersToProcess, Object param, Set<Type> stubProvidersToOperate) {
@@ -320,6 +291,49 @@ public with sharing class GenericStubProvider implements StubProvider{
             } else {
                 stubProvidersToProcess.removeAll(stubProvidersToOperate);
             }
+        }
+    }
+
+    public class StubReturnValue {
+
+        GenericStubProvider stubProvider;
+        StubCondition stubCondition;
+
+        private StubReturnValue(GenericStubProvider stubProvider, StubCondition stubCondition) {
+            this.stubProvider = stubProvider;
+            this.stubCondition = stubCondition;
+        }
+
+        public GenericStubProvider thenReturn(Object returnValue) {
+            return this.stubProvider.addStub(this.stubCondition, returnValue);
+        }
+    }
+
+    public class StubCondition {
+
+        private String methodName;
+        private System.Type returnType;
+        private List<System.Type> inputTypes;
+        private List<Object> inputValues;
+
+        public StubCondition setMethod(String methodName) {
+            this.methodName = methodName;
+            return this;
+        }
+
+        public StubCondition setReturnType(System.Type returnType) {
+            this.returnType = returnType;
+            return this;
+        }
+
+        public StubCondition setInputTypes(List<System.Type> inputTypes) {
+            this.inputTypes = inputTypes;
+            return this;
+        }
+
+        public StubCondition setInputValues(List<Object> inputValues) {
+            this.inputValues = inputValues;
+            return this;
         }
     }
 
